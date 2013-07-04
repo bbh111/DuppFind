@@ -1,75 +1,109 @@
 package edu.rutgers.vietnguyen;
 
 import java.io.File;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
-public class DuppFind implements Runnable{
-	private File directory;
-	private Map<String, List<String>> md5FileMap;
-	private ExecutorService pool;
+public class DuppFind implements Runnable {
+	private String dirName;
+	private FileTableModel fileTableModel; 
 	
-	public DuppFind(File directory, Map<String, List<String>> md5FileMap, ExecutorService pool)
+	List<List<String>> fileGroups;
+	
+	public DuppFind(String dirName, FileTableModel fileTableModel)
 	{
-		this.directory = directory;
-		this.md5FileMap = md5FileMap;
-		this.pool = pool;
-	}	
-
+		this.dirName = dirName;
+		this.fileGroups = new ArrayList<List<String>>();
+		this.fileTableModel = fileTableModel;
+	}
+	
 	@Override
-	public void run () {
+	public void run()
+	{
+		//1. File size comparation
+		ExecutorService pool = Executors.newCachedThreadPool(); 
+		
+		Map<Long, List<String>> fileMap = new ConcurrentHashMap<Long, List<String>>();
+		
+		FileSizeDuppFind df1 = new FileSizeDuppFind(new File(dirName), fileMap, pool);
+		
+		Future<?> result = pool.submit(df1);
+		
 		try
 		{
-			File[] files = directory.listFiles();
-			ArrayList<Future<?>> results = new ArrayList<Future<?>>();
-			for(File file : files)
-			{
-				if(file.isDirectory())
-				{
-					//System.out.println("Dir: " + file.getAbsolutePath());
-					DuppFind df = new DuppFind(file, md5FileMap, pool);
-					Future<?> result = pool.submit(df);
-					results.add(result);
-				}
-				else if(file.isFile())
-				{
-					//calculate md5
-					String md5 = MD5Utils.getMD5(file);
-					List<String> listFile = new CopyOnWriteArrayList<String>();
-					if(md5FileMap.get(md5) != null)
-					{
-						System.out.println("Duplicate md5: " + md5 + ", size now: " + md5FileMap.get(md5).size());
-						listFile.addAll(md5FileMap.get(md5));
-					}
-					listFile.add(file.getAbsolutePath());
-					md5FileMap.remove(md5);
-					md5FileMap.put(md5, listFile);
-					System.out.println("Add: File" + file.getAbsolutePath() + ", MD5: " + md5);
-				}
-			}
-			
-			//wait until all sub-tasks complete
-			for(Future<?> result: results)
-			{
-				try
-				{
-					result.get();
-				}
-				catch(InterruptedException e)
-				{
-					e.printStackTrace();
-				}
-				catch(ExecutionException e)
-				{
-					e.printStackTrace();
-				}
-			}
-			
+			result.get();
 		}
-		
-		catch(Exception e)
+		catch(InterruptedException e)
 		{
-			
+			e.printStackTrace();
+		}
+		catch(ExecutionException e)
+		{
+			e.printStackTrace();
+		}
+		pool.shutdown();
+
+		
+		//2. MD5 comparation
+		ArrayList<Future<List<List<String>>>> fs = new ArrayList<Future<List<List<String>>>>();
+		pool = Executors.newFixedThreadPool(5); 
+		for(Map.Entry<Long, List<String>> entry : fileMap.entrySet())
+		{
+			List<String> filesToCheck= entry.getValue();
+			if(filesToCheck.size() > 1)
+			{
+				//do work
+				MD5DuppFind md5df = new MD5DuppFind(filesToCheck);
+				Future<List<List<String>>> f = pool.submit(md5df);
+				fs.add(f);
+			}
+		}
+		for(Future<List<List<String>>> f : fs)
+		{
+			try
+			{
+				List<List<String>> lstDuppFilesGrp = f.get();
+				fileGroups.addAll(lstDuppFilesGrp);
+			}
+			catch(InterruptedException e)
+			{
+				e.printStackTrace();
+			}
+			catch(ExecutionException e)
+			{
+				e.printStackTrace();
+			}
+
+		}
+		pool.shutdown();
+		
+		//3. Output result
+		output();
+		
+	}
+	
+	private void output()
+	{
+		//Delete old data
+		fileTableModel.deleteAllRows();
+		
+		//new data
+		for(List<String> lstDuppFiles : fileGroups)
+		{	
+			System.out.println("---");
+			for(String s: lstDuppFiles)
+			{
+				RowData row = new RowData(false, s, FileUtils.getExtension(s));
+				fileTableModel.insertRow(row);
+				System.out.println("File: " + s);
+			}
+			fileTableModel.insertEmptyRow();
 		}
 	}
 }

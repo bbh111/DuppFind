@@ -43,39 +43,7 @@ public class TestDuppFind {
 	
 	public static void test(String dirName)
 	{
-		ExecutorService pool = Executors.newFixedThreadPool(10);
-		
-		Map<String, List<String>> md5FileMap = new ConcurrentHashMap<String, List<String>>();
-		
-		DuppFind df1 = new DuppFind(new File(dirName), md5FileMap, pool);
-		
-		Future<?> result = pool.submit(df1);
-		
-		try
-		{
-			result.get();
-		}
-		catch(InterruptedException e)
-		{
-			e.printStackTrace();
-		}
-		catch(ExecutionException e)
-		{
-			e.printStackTrace();
-		}
-		//while(!result.isDone());	//wait
-		
-		System.out.println("------Result ------");
-		for(Map.Entry<String, List<String>> entry : md5FileMap.entrySet())
-		{
-			if(entry.getValue().size() != 1)
-			{
-				System.out.println("MD5: " + entry.getKey());
-				for(String s : entry.getValue())
-					System.out.println("		File: " + s);
-			}
-		}
-		System.out.println("Done");
-		pool.shutdown();
+//		DuppFind df = new DuppFind(dirName);
+//		df.run();
 	}
 }
